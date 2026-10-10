@@ -1,4 +1,4 @@
-name: Build TalaNavazan APK
+name: Build Live Gold and Stock App
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Android project and fix settings
+      - name: Extract Android project
         run: |
           unzip -o TalaNavazan-v8.zip -d .
 
@@ -35,27 +35,217 @@ jobs:
 
           echo "kotlin.jvm.target.validation.mode=warning" >> gradle.properties
 
+      - name: Replace broken activity with live market app
+        run: |
           python3 - <<'PY'
+          import os
+          import re
           import xml.etree.ElementTree as ET
 
-          path = 'app/src/main/AndroidManifest.xml'
-          android_ns = 'http://schemas.android.com/apk/res/android'
+          manifest = 'app/src/main/AndroidManifest.xml'
+          ns = 'http://schemas.android.com/apk/res/android'
+          ET.register_namespace('android', ns)
 
-          ET.register_namespace('android', android_ns)
-          tree = ET.parse(path)
+          tree = ET.parse(manifest)
           root = tree.getroot()
           app = root.find('application')
 
           if app is None:
-              raise RuntimeError('Application section not found')
+              raise RuntimeError('Android application section not found')
 
-          app.set('{' + android_ns + '}label', 'نوسان گیر طلا و بورس')
+          app.set('{' + ns + '}label', 'نوسان گیر طلا و بورس')
 
-          tree.write(
-              path,
-              encoding='utf-8',
-              xml_declaration=True
-          )
+          permissions = [
+              'android.permission.INTERNET',
+              'android.permission.ACCESS_NETWORK_STATE'
+          ]
+
+          existing = {
+              p.get('{' + ns + '}name')
+              for p in root.findall('uses-permission')
+          }
+
+          for permission in permissions:
+              if permission not in existing:
+                  element = ET.Element('uses-permission')
+                  element.set('{' + ns + '}name', permission)
+                  root.insert(0, element)
+
+          tree.write(manifest, encoding='utf-8', xml_declaration=True)
+
+          target = None
+          package_name = None
+
+          for base, dirs, files in os.walk('app/src/main'):
+              for filename in files:
+                  if filename.endswith('.kt') and filename == 'MainActivity.kt':
+                      candidate = os.path.join(base, filename)
+                      with open(candidate, encoding='utf-8') as f:
+                          content = f.read()
+                      match = re.search(r'^\s*package\s+([A-Za-z0-9_.]+)',
+                                        content, re.MULTILINE)
+                      if match:
+                          target = candidate
+                          package_name = match.group(1)
+                          break
+              if target:
+                  break
+
+          if not target:
+              raise RuntimeError('MainActivity.kt was not found in project')
+
+          source = r'''
+          import android.app.Activity
+          import android.os.Bundle
+          import android.graphics.Color
+          import android.view.Gravity
+          import android.view.ViewGroup
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          class MainActivity : Activity() {
+              private lateinit var browser: WebView
+              private lateinit var status: TextView
+
+              private val goldUrl = "https://www.tgju.org/profile/geram18"
+              private val stockUrl = "https://www.tsetmc.com/"
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(Color.WHITE)
+
+                  val title = TextView(this)
+                  title.text = "نوسان گیر طلا و بورس"
+                  title.textSize = 22f
+                  title.gravity = Gravity.CENTER
+                  title.setTextColor(Color.rgb(25, 75, 50))
+                  title.setPadding(8, 18, 8, 18)
+                  root.addView(title)
+
+                  val buttons = LinearLayout(this)
+                  buttons.orientation = LinearLayout.HORIZONTAL
+                  buttons.gravity = Gravity.CENTER
+
+                  val gold = Button(this)
+                  gold.text = "قیمت زنده طلا"
+                  buttons.addView(
+                      gold,
+                      LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                  )
+
+                  val stocks = Button(this)
+                  stocks.text = "بورس و سهام"
+                  buttons.addView(
+                      stocks,
+                      LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                  )
+
+                  val refresh = Button(this)
+                  refresh.text = "تازه سازی"
+                  buttons.addView(
+                      refresh,
+                      LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                  )
+
+                  root.addView(buttons)
+
+                  status = TextView(this)
+                  status.text = "قیمت‌ها از طریق اینترنت نمایش داده می‌شوند."
+                  status.textSize = 13f
+                  status.gravity = Gravity.CENTER
+                  status.setTextColor(Color.DKGRAY)
+                  status.setPadding(8, 6, 8, 6)
+                  root.addView(status)
+
+                  browser = WebView(this)
+                  browser.settings.javaScriptEnabled = true
+                  browser.settings.domStorageEnabled = true
+                  browser.settings.loadsImagesAutomatically = true
+                  browser.webViewClient = object : WebViewClient() {
+                      override fun onPageStarted(
+                          view: WebView?,
+                          url: String?,
+                          favicon: android.graphics.Bitmap?
+                      ) {
+                          status.text = "در حال دریافت اطلاعات از سایت بازار..."
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          status.text = "صفحه بازار بارگذاری شد؛ برای دریافت آخرین اطلاعات تازه‌سازی کنید."
+                      }
+                  }
+
+                  root.addView(
+                      browser,
+                      LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      )
+                  )
+
+                  val copyright = TextView(this)
+                  copyright.text =
+                      "ساخته‌شده توسط امین وکیل نسل\n" +
+                      "© کلیه حقوق مادی و معنوی این برنامه متعلق به امین وکیل نسل است."
+                  copyright.textSize = 11f
+                  copyright.gravity = Gravity.CENTER
+                  copyright.setTextColor(Color.DKGRAY)
+                  copyright.setPadding(6, 8, 6, 8)
+                  root.addView(copyright)
+
+                  gold.setOnClickListener {
+                      browser.loadUrl(goldUrl)
+                  }
+
+                  stocks.setOnClickListener {
+                      browser.loadUrl(stockUrl)
+                  }
+
+                  refresh.setOnClickListener {
+                      if (browser.url == null) {
+                          browser.loadUrl(goldUrl)
+                      } else {
+                          browser.reload()
+                      }
+                  }
+
+                  setContentView(root)
+
+                  if (savedInstanceState == null) {
+                      browser.loadUrl(goldUrl)
+                  } else {
+                      browser.restoreState(savedInstanceState)
+                  }
+              }
+
+              override fun onSaveInstanceState(outState: Bundle) {
+                  browser.saveState(outState)
+                  super.onSaveInstanceState(outState)
+              }
+
+              @Deprecated("Deprecated in Android API")
+              override fun onBackPressed() {
+                  if (::browser.isInitialized && browser.canGoBack()) {
+                      browser.goBack()
+                  } else {
+                      super.onBackPressed()
+                  }
+              }
+          }
+          '''
+
+          with open(target, 'w', encoding='utf-8') as f:
+              f.write('package ' + package_name + '\n\n' + source)
+
+          print('Updated activity:', target)
+          print('Package:', package_name)
           PY
 
       - name: Setup Gradle
