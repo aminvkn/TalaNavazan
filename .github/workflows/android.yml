@@ -13,15 +13,5 @@ steps:
 - name: Checkout repository
 uses: actions/checkout@v4
 
-  - name: Inspect project ZIP
-    run: |
-      echo "=== Repository files ==="
-      ls -la
-      echo "=== ZIP contents ==="
-      unzip -l TalaNavazan-v8.zip
-      mkdir -p /tmp/tala
-      unzip -o TalaNavazan-v8.zip -d /tmp/tala >/dev/null
-      echo "=== Android build files ==="
-      find /tmp/tala -maxdepth 6 -type f -name "gradlew" -o -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" -o -name "pubspec.yaml" -o -name "package.json" -print
-      echo "=== Project file list ==="
-      find /tmp/tala -maxdepth 4 -type f | head -200
+  - name: Inspect ZIP
+    run: unzip -l TalaNavazan-v8.zip
