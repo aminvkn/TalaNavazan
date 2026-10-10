@@ -23,19 +23,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Android project
+      - name: Extract Android project and fix settings
         run: |
           unzip -o TalaNavazan-v8.zip -d .
-          sed -i 's/VERSION_1_8/VERSION_17/g' app/build.gradle.kts
+
+          find . -type f \( -name '*.gradle' -o -name '*.gradle.kts' \) \
+            -exec sed -i \
+            -e 's/VERSION_1_8/VERSION_17/g' \
+            -e 's/jvmTarget = "1.8"/jvmTarget = "17"/g' \
+            {} +
+
+          echo "kotlin.jvm.target.validation.mode=warning" >> gradle.properties
+
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          p = 'app/src/main/AndroidManifest.xml'
-          ns = 'http://schemas.android.com/apk/res/android'
-          ET.register_namespace('android', ns)
-          tree = ET.parse(p)
-          app = tree.getroot().find('application')
-          app.set('{' + ns + '}label', 'نوسان گیر طلا و بورس')
-          tree.write(p, encoding='utf-8', xml_declaration=True)
+
+          path = 'app/src/main/AndroidManifest.xml'
+          android_ns = 'http://schemas.android.com/apk/res/android'
+
+          ET.register_namespace('android', android_ns)
+          tree = ET.parse(path)
+          root = tree.getroot()
+          app = root.find('application')
+
+          if app is None:
+              raise RuntimeError('Application section not found')
+
+          app.set('{' + android_ns + '}label', 'نوسان گیر طلا و بورس')
+
+          tree.write(
+              path,
+              encoding='utf-8',
+              xml_declaration=True
+          )
           PY
 
       - name: Setup Gradle
