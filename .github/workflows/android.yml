@@ -14,3 +14,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract Android project
+        run: |
+          unzip -o TalaNavazan-v8.zip -d .
+          sed -i 's/VERSION_1_8/VERSION_17/g' app/build.gradle.kts
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          p = 'app/src/main/AndroidManifest.xml'
+          ns = 'http://schemas.android.com/apk/res/android'
+          ET.register_namespace('android', ns)
+          tree = ET.parse(p)
+          app = tree.getroot().find('application')
+          app.set('{' + ns + '}label', 'نوسان گیر طلا و بورس')
+          tree.write(p, encoding='utf-8', xml_declaration=True)
+          PY
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NosanGireTalaVaBourse-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
